@@ -2,7 +2,7 @@
 import {useEffect,useState} from 'react';
 import QRCode from 'qrcode';
 import {AVATARS,type LiveView} from '../lib/live';
-import {TYPES} from '../lib/quiz';
+import {isOpinion,TEXT_TYPES,TYPES} from '../lib/quiz';
 import {isMuted,music,setMuted,sfx} from './sound';
 import {api,base,deviceToken,imageUrl} from './client';
 // Canlı Kahoot ekranı. Öğretmen (secret verilir) ekranını tahtaya yansıtır; öğrenciler kendi cihazından PIN ve takma adla bağlanır.
@@ -12,7 +12,7 @@ import {api,base,deviceToken,imageUrl} from './client';
 const SHAPES=['▲','◆','●','■'],clock=()=>Date.now(),spaced=(pin:string)=>`${pin.slice(0,3)} ${pin.slice(3)}`;
 // Doğru/Yanlış'ta Kahoot'taki gibi "Doğru" mavi baklava, "Yanlış" kırmızı üçgendir.
 const tone=(type:string,i:number)=>type==='tf'?[1,0][i]:i;
-type View=LiveView;type Row=NonNullable<View['board']>[number];type Q=NonNullable<View['q']>;
+type View=LiveView;type Row=NonNullable<View['board']>[number];export type AnswerQuestion=NonNullable<View['q']>;type Q=AnswerQuestion;
 const Move=({n}:{n:number})=>n>0?<i className="up">▲{n}</i>:n<0?<i className="down">▼{-n}</i>:<i>–</i>;
 const still=()=>matchMedia('(prefers-reduced-motion:reduce)').matches;
 // Puan, önceki değerinden yenisine hızlıca sayarak çıkar (satırın beliriş animasyonundan sonra başlar). Hareket azaltma tercihinde doğrudan son değer görünür.
@@ -31,15 +31,19 @@ function seeded(key:string){let h=2166136261;for(const c of key)h=Math.imul(h^c.
 const CONFETTI=(()=>{const r=seeded('konfeti'),colors=['#e21b3c','#1368ce','#ffd166','#26890c','#ffffff'];return Array.from({length:70},()=>({left:r()*100,delay:r()*2.5,dur:2.6+r()*2.2,color:colors[Math.floor(r()*colors.length)],w:6+r()*8,rot:r()*360}));})();
 const Confetti=()=><div className="live-confetti" aria-hidden="true">{CONFETTI.map((c,i)=><i key={i} style={{left:`${c.left}%`,width:c.w,height:c.w*1.6,background:c.color,rotate:`${c.rot}deg`,animationDelay:`${REVEAL[0]/1000+c.delay}s`,animationDuration:`${c.dur}s`}}/>)}</div>;
 function Podium({rows}:{rows:Row[]}){return <div className="live-podium">{[1,0,2].map(i=>rows[i]&&<div key={i} className={`p${i+1}`}><span aria-hidden="true">{rows[i].avatar}</span><b>{['🥇','🥈','🥉'][i]} {rows[i].name}</b><small><Count from={0} to={rows[i].score} delay={REVEAL[i]+300}/> puan</small><div>{i+1}</div></div>)}</div>;}
+function TeamBoard({rows}:{rows:NonNullable<View['teamBoard']>}){return <ol className="team-board">{rows.map((r,i)=><li key={r.id} style={{borderColor:r.color}}><span style={{background:r.color}}>{i+1}</span><b>{r.name}<small>{r.members} üye</small></b><strong>{r.score}</strong></li>)}</ol>;}
 // Sorunun türünü ve puanını anlatan küçük etiketler (soru ekranında ve girişte).
 function Badges({q}:{q:Q}){return <>{q.type!=='quiz'&&<small>{TYPES[q.type].icon} {TYPES[q.type].label}</small>}{q.multi&&<small>☑ Birden çok doğru</small>}
-{q.type!=='poll'&&q.points===2&&<small className="double">×2 Çift puan</small>}{q.type!=='poll'&&q.points===0&&<small>Puansız</small>}</>;}
+{!isOpinion(q.type)&&q.points===2&&<small className="double">×2 Çift puan</small>}{!isOpinion(q.type)&&q.points===0&&<small>Puansız</small>}</>;}
 // Oyuncunun cevap alanı: tek seçimde şıkka dokunmak yeter; çoklu seçimde işaretleyip gönderir, sıralamada şıklara sırayla dokunur, yazılı soruda cevabı yazar.
 // Soru değişince sıfırlansın diye soru sırasıyla anahtarlanır.
-function Answer({q,busy,left,send}:{q:Q;busy:boolean;left:number;send:(choice:unknown)=>void}){const [sel,setSel]=useState<number[]>([]),[typed,setTyped]=useState('');
+export function Answer({q,busy,left,send}:{q:Q;busy:boolean;left:number;send:(choice:unknown)=>void}){const [sel,setSel]=useState<number[]>([]),[typed,setTyped]=useState(''),[value,setValue]=useState(q.type==='slider'?q.min:q.type==='scale'?q.min:0),[point,setPoint]=useState<{x:number;y:number}|null>(null);
 const off=busy||left<=0,ordered=q.type==='puzzle';
-if(q.type==='type')return <form className="live-type" onSubmit={e=>{e.preventDefault();if(typed.trim())send(typed.trim());}}><label className="sr-only" htmlFor="live-typed">Cevabın</label>
-<input id="live-typed" autoFocus autoComplete="off" maxLength={20} placeholder="Cevabını yaz" value={typed} onChange={e=>setTyped(e.target.value)}/><small>{typed.length}/20</small><button className="live-next" disabled={off||!typed.trim()}>Gönder</button></form>;
+if(TEXT_TYPES.includes(q.type)){const max=q.type==='type'?20:q.type==='open'?250:q.type==='wordcloud'?40:100;return <form className="live-type" onSubmit={e=>{e.preventDefault();if(typed.trim())send(typed.trim());}}><label className="sr-only" htmlFor="live-typed">Cevabın</label>
+{q.type==='open'?<textarea id="live-typed" autoFocus rows={5} maxLength={max} placeholder="Yanıtını ayrıntılı yaz" value={typed} onChange={e=>setTyped(e.target.value)}/>:<input id="live-typed" autoFocus autoComplete="off" maxLength={max} placeholder={q.type==='wordcloud'?'Bir kelime veya kısa ifade':q.type==='brainstorm'?'Fikrini yaz':'Cevabını yaz'} value={typed} onChange={e=>setTyped(e.target.value)}/>}<small>{typed.length}/{max}</small><button className="live-next" disabled={off||!typed.trim()}>Gönder</button></form>;}
+if(q.type==='slider')return <div className="live-range"><output>{value} {q.unit}</output><input type="range" min={q.min} max={q.max} step={q.step} value={value} onChange={e=>setValue(Number(e.target.value))}/><div><span>{q.min} {q.unit}</span><span>{q.max} {q.unit}</span></div><button className="live-next" disabled={off} onClick={()=>send(value)}>Tahmini gönder</button></div>;
+if(q.type==='scale')return <div className="live-scale"><div><small>{q.lowLabel}</small>{Array.from({length:q.max-q.min+1},(_,i)=>q.min+i).map(n=><button key={n} className={value===n?'chosen':''} disabled={off} onClick={()=>setValue(n)}>{n}</button>)}<small>{q.highLabel}</small></div><button className="live-next" disabled={off} onClick={()=>send(value)}>Gönder</button></div>;
+if(q.type==='pin')return <div className="live-pin-answer"><button type="button" disabled={off} onClick={e=>{const r=e.currentTarget.getBoundingClientRect();setPoint({x:(e.clientX-r.left)/r.width*100,y:(e.clientY-r.top)/r.height*100});}}>{q.image&&<img src={imageUrl(q.image)} alt="İşaretlenecek görsel"/>}{point&&<i style={{left:`${point.x}%`,top:`${point.y}%`}}>⌖</i>}</button><p>{point?'Noktayı değiştirmek için görsele yeniden dokun.':'Görselde doğru olduğunu düşündüğün noktaya dokun.'}</p><button className="live-next" disabled={off||!point} onClick={()=>send(point)}>Noktayı gönder</button></div>;
 const toggle=(i:number)=>setSel(s=>s.includes(i)?ordered?s.slice(0,s.indexOf(i)):s.filter(x=>x!==i):[...s,i]);
 return <><div className={`live-tiles${q.options.some(o=>o.length>40)?' long':''} fresh`}>{q.options.map((o,i)=>{const n=sel.indexOf(i);
 return <button key={i} className={`live-tile c${tone(q.type,i)}${n>=0?' picked':''}`} disabled={off} aria-pressed={q.multi||ordered?n>=0:undefined}
@@ -49,11 +53,11 @@ onClick={()=>q.multi||ordered?toggle(i):send(i)}><i aria-hidden="true">{SHAPES[t
 export default function LiveGame({pin,secret='',onExit}:{pin:string;secret?:string;onExit:(msg?:string)=>void}){
 const [token]=useState(deviceToken),[view,setView]=useState<View|null>(null),[got,setGot]=useState(0),[now,setNow]=useState(0);
 const [name,setName]=useState(()=>{try{return localStorage.getItem('kahoot-ad')||'';}catch{return '';}}),[error,setError]=useState(''),[busy,setBusy]=useState(false),[qr,setQr]=useState('');
-const [avatar,setAvatar]=useState(()=>{try{const a=localStorage.getItem('kahoot-avatar')||'';return AVATARS.includes(a)?a:AVATARS[0];}catch{return AVATARS[0];}}),[muted,setMute]=useState(isMuted),[full,setFull]=useState(false),[sure,setSure]=useState(false);
+const [avatar,setAvatar]=useState(()=>{try{const a=localStorage.getItem('kahoot-avatar')||'';return AVATARS.includes(a)?a:AVATARS[0];}catch{return AVATARS[0];}}),[team,setTeam]=useState(''),[muted,setMute]=useState(isMuted),[full,setFull]=useState(false),[sure,setSure]=useState(false);
 function take(v:View){const t=clock();setView(v);setGot(t);setNow(t);}
 async function act(body:Record<string,unknown>){if(busy)return;setBusy(true);setError('');try{take(await api<View>('/api/live',{pin,...body}));}catch(e){const x=e as Error&{status?:number};if(x.status===404)onExit(x.message);else setError(x.message||'İstek gönderilemedi. Tekrar dene.');}finally{setBusy(false);}}
 const lead=(action:string,more:Record<string,unknown>={})=>act({action,host:secret,...more});
-function join(){try{localStorage.setItem('kahoot-ad',name.trim());localStorage.setItem('kahoot-avatar',avatar);}catch{}void act({action:'join',name:name.trim(),avatar,token});}
+function join(){try{localStorage.setItem('kahoot-ad',name.trim());localStorage.setItem('kahoot-avatar',avatar);}catch{}void act({action:'join',name:name.trim(),avatar,team,token});}
 // Yoklama: oyun bulunamazsa (yanlış PIN, kapanmış oyun) giriş ekranına dönülür.
 useEffect(()=>{let on=true;const load=()=>fetch(`${base}/api/live?pin=${pin}&${secret?`host=${secret}`:`token=${token}`}`).then(async r=>{const d=await r.json();if(!on)return;if(r.status===404)onExit(d.error);else if(r.ok)take(d);}).catch(()=>{});
 load();const t=setInterval(load,1000);return()=>{on=false;clearInterval(t);};},[pin,secret,token,onExit]);
@@ -85,8 +89,8 @@ const {q,result,me,board}=view,host=view.host,last=view.at+1>=view.total;
 const next=(t:string)=><button className="live-next" disabled={busy} onClick={()=>void lead('next')}>{t}</button>;
 // Henüz katılmamış (ya da öğretmenin çıkardığı) öğrenci: takma ad ve avatar sorulur.
 if(!host&&!me)return stage(phase==='end'?<><h2 className="live-title">Bu oyun bitti.</h2>{board&&<Podium rows={board}/>}</>:view.locked?<><h2 className="live-title">🔒 Oyun kilitli</h2><p className="live-wait">Öğretmen kilidi açınca katılabilirsin; bu ekran kendiliğinden yenilenir.</p></>:
-<form className="live-join" onSubmit={e=>{e.preventDefault();join();}}><h2 className="live-title">Takma adın ne?</h2><p>Adın ve avatarın tahtada herkese görünür.</p><div className="live-avatars" role="radiogroup" aria-label="Avatar">{AVATARS.map(a=><button type="button" key={a} role="radio" aria-checked={avatar===a} className={avatar===a?'chosen':''} onClick={()=>setAvatar(a)}>{a}</button>)}</div><label className="sr-only" htmlFor="live-name">Takma ad</label><input id="live-name" autoFocus autoComplete="off" maxLength={15} placeholder="Takma ad" value={name} onChange={e=>setName(e.target.value)}/><button className="live-next" disabled={busy||name.trim().length<2}>Tamam, başla!</button></form>);
-const t=q?q.type:'quiz',optionsQ=t!=='type';
+<form className="live-join" onSubmit={e=>{e.preventDefault();join();}}><h2 className="live-title">Takma adın ne?</h2><p>Adın ve avatarın tahtada herkese görünür.</p><div className="live-avatars" role="radiogroup" aria-label="Avatar">{AVATARS.map(a=><button type="button" key={a} role="radio" aria-checked={avatar===a} className={avatar===a?'chosen':''} onClick={()=>setAvatar(a)}>{a}</button>)}</div>{view.teamMode&&view.teamChoice&&<div className="team-picker"><b>Takımını seç</b>{view.teams?.map(t=><button type="button" key={t.id} className={team===t.id?'chosen':''} style={{borderColor:t.color}} onClick={()=>setTeam(t.id)}><i style={{background:t.color}}/>{t.name}<small>{t.count}</small></button>)}</div>}<label className="sr-only" htmlFor="live-name">Takma ad</label><input id="live-name" autoFocus autoComplete="off" maxLength={15} placeholder="Takma ad" value={name} onChange={e=>setName(e.target.value)}/><button className="live-next" disabled={busy||name.trim().length<2||(view.teamMode&&view.teamChoice&&!team)}>Tamam, başla!</button></form>);
+const t=q?q.type:'quiz',optionsQ=['quiz','tf','puzzle','poll'].includes(t);
 // Soru açılışı: şıklardan önce sorunun numarası, türü ve geri sayım çubuğu.
 const introBox=q&&<div className="live-intro" role="status"><b>Soru {view.at+1}</b><div className="live-badges"><Badges q={q}/></div><div className="live-bar"><span style={{width:`${100-Math.min(100,intro/4*100)}%`}}/></div><small>{optionsQ?'Şıklar':'Cevap alanı'} {Math.ceil(intro)} saniye sonra açılıyor</small></div>;
 // Öğretmen ekranında ve sonuçta gösterilen (dokunulamayan) şıklar; sonuçta doğrular işaretlenir, diğerleri soluklaşır.
@@ -95,32 +99,38 @@ const cls=`live-tile c${tone(t,i)}${result&&t!=='poll'&&t!=='puzzle'?right?' cor
 return <div key={i} className={cls}><i aria-hidden="true">{SHAPES[tone(t,i)]}</i><span>{o}</span>{right&&<em>✓</em>}{t==='puzzle'&&me?.pick&&<em>{me.pick.indexOf(i)+1}</em>}</div>;})}</div>;
 // Cevap dağılımı: şıklı sorularda her şık için aşağıdan yükselen çubuk; sıralama ve yazılı soruda doğru/yanlış sayısı.
 const bars=q&&result&&(optionsQ&&t!=='puzzle'?<div className="live-bars" aria-label="Cevap dağılımı">{result.counts.map((c,i)=><div key={i} className={`c${tone(t,i)}${t==='poll'||result.correct.includes(i)?' correct':''}`}><b>{t!=='poll'&&result.correct.includes(i)&&'✓ '}{c}</b><span style={{height:6+c/Math.max(1,...result.counts)*90}}/><i aria-hidden="true">{SHAPES[tone(t,i)]}</i></div>)}</div>
-:<div className="live-bars" aria-label="Doğru ve yanlış sayısı">{[[result.right,'c3 correct','✓'],[result.wrong,'c0 correct','✗']].map(([c,cls,s])=><div key={s as string} className={cls as string}><b>{c}</b><span style={{height:6+(c as number)/Math.max(1,result.right,result.wrong)*90}}/><i aria-hidden="true">{s}</i></div>)}</div>);
+:(t==='type'||t==='slider'||t==='pin')?<div className="live-bars" aria-label="Doğru ve yanlış sayısı">{[[result.right,'c3 correct','✓'],[result.wrong,'c0 correct','✗']].map(([c,cls,s])=><div key={s as string} className={cls as string}><b>{c}</b><span style={{height:6+(c as number)/Math.max(1,result.right,result.wrong)*90}}/><i aria-hidden="true">{s}</i></div>)}</div>:null);
 // Sonuçta doğru cevap: sıralamada doğru dizilim, yazılı soruda kabul edilen yazımlar ve en sık verilen cevaplar.
 const answer=q&&result&&(t==='puzzle'?<ol className="live-order">{result.correct.map((n,k)=><li key={n} className={`c${tone(t,n)}`}><b>{k+1}</b><i aria-hidden="true">{SHAPES[tone(t,n)]}</i><span>{q.options[n]}</span></li>)}</ol>
 :t==='type'?<div className="live-typed"><p>Doğru cevap: <b>{result.answer}</b></p>{!!result.typed?.length&&<ul>{result.typed.map(x=><li key={x.text} className={x.ok?'ok':''}><span>{x.ok?'✓':'✗'} {x.text}</span><b>{x.n}</b></li>)}</ul>}</div>
+:t==='wordcloud'?<div className="word-cloud">{result.typed?.map((x,i)=><span key={x.text} style={{fontSize:`${Math.min(34,16+x.n*4)}px`,rotate:`${i%2?'2deg':'-2deg'}`}}>{x.text}<small>{x.n}</small></span>)}</div>
+:t==='open'?<div className="open-responses">{result.typed?.map(x=><p key={x.text}>{x.text}</p>)}</div>
+:t==='brainstorm'?<div className="idea-list">{result.ideas?.map(x=><button key={x.id} disabled={host||x.id===me?.id||busy} className={me?.vote===x.id?'chosen':''} onClick={()=>void act({action:'vote',token,idea:x.id})}><span>{x.text}</span><b>♥ {x.votes}</b></button>)}</div>
+:t==='slider'?<div className="numeric-result"><b>{result.number} {q.unit}</b><span>Doğru değer</span>{result.values?.map(x=><small key={x.value}>{x.value} {q.unit}: {x.n}</small>)}</div>
+:t==='scale'?<div className="scale-result">{result.values?.map(x=><div key={x.value}><b>{x.value}</b><span style={{height:`${12+x.n*18}px`}}/><small>{x.n}</small></div>)}</div>
+:t==='pin'?<div className="pin-result">{q.image&&<img src={imageUrl(q.image)} alt="Yanıt noktaları"/>}{result.pins?.map((x,i)=><i key={i} className={x.ok?'ok':''} style={{left:`${x.x}%`,top:`${x.y}%`}}/>)}{result.target&&<b style={{left:`${result.target.x}%`,top:`${result.target.y}%`,width:`${result.target.radius*2}%`,aspectRatio:'1'}}/>}</div>
 :t!=='poll'&&<p className="live-sub">Doğru cevap: <b>{result.answer}</b></p>);
 const question=q&&<div className="live-question" key={view.at}>{q.image&&<img src={imageUrl(q.image)} alt=""/>}<div><div className="live-badges"><Badges q={q}/></div><h2>{q.prompt}</h2></div></div>;
 const timer=q&&phase==='question'&&!intro&&<div className={`live-timer${left<=5?' low':''}`} role="timer" aria-label={`${Math.ceil(left)} saniye kaldı`}><b>{Math.ceil(left)}</b><div><span style={{width:`${left/view.time*100}%`}}/></div><small>{q.answered}/{view.count} cevap</small></div>;
-if(phase==='end'&&board)return stage(<><h2 className="live-title">{host?'🏆 Podyum':me&&me.rank<=3?'🎉 Podyumdasın!':`${me?.rank}. oldun`}</h2>{me&&<p className="live-sub">{me.name} · {me.score} puan</p>}<Podium rows={board}/>{board.length>3&&<div className="live-after"><Board rows={board} me={me?.name}/></div>}
+if(phase==='end'&&board)return stage(<><h2 className="live-title">{view.teamMode?'🏆 Takım podyumu':host?'🏆 Podyum':me&&me.rank<=3?'🎉 Podyumdasın!':`${me?.rank}. oldun`}</h2>{me&&<p className="live-sub">{me.name} · {me.score} puan</p>}{view.teamMode&&view.teamBoard?<TeamBoard rows={view.teamBoard}/>:<Podium rows={board}/>}<div className="live-after"><Board rows={board} me={me?.name}/></div>
 <div className="live-actions">{host&&<a className="live-ghost" href={`${base}/api/live?pin=${view.pin}&host=${secret}&rapor=1`} download>⬇ Raporu indir (Excel)</a>}<button className="live-next" onClick={()=>onExit()}>{host?'Kahootlarıma dön':'Bitir'}</button></div><Confetti/></>);
-if(phase==='board'&&board){const s=view.stars;return stage(<><h2 className="live-title">Skor tablosu</h2>
+if(phase==='board'&&board){const s=view.stars;return stage(<><h2 className="live-title">{view.teamMode?'Takım ve oyuncu skorları':'Skor tablosu'}</h2>{view.teamMode&&view.teamBoard&&<TeamBoard rows={view.teamBoard}/>}
 {s&&(s.riser||s.fastest||s.streak)&&<ul className="live-stars">{s.riser&&<li><span aria-hidden="true">🚀</span><small>En çok yükselen</small><b>{s.riser.name}</b><em>▲{s.riser.move} sıra</em></li>}{s.fastest&&<li><span aria-hidden="true">⚡</span><small>En hızlı doğru</small><b>{s.fastest.name}</b><em>{s.fastest.secs} sn</em></li>}{s.streak&&<li><span aria-hidden="true">🔥</span><small>Seride</small><b>{s.streak.name}</b><em>{s.streak.streak} doğru üst üste</em></li>}</ul>}
 {me&&<p className="live-sub">{me.rank}. sıradasın · {me.score} puan{me.move>0?` · ▲ ${me.move} sıra yükseldin`:me.move<0?` · ▼ ${-me.move} sıra düştün`:''}</p>}
 <Board rows={board} me={me?.name}/>{host?next('Sonraki soru →'):<p className="live-wait">Öğretmen sonraki soruya geçince devam edeceksin.</p>}</>);}
 if(host){if(phase==='lobby')return stage(<><div className="live-lobby"><div><p>Katılmak için <b>{link.replace(/^https?:\/\//,'').replace(/\?pin=\d+$/,'')}</b> adresine gir ya da kare kodu okut</p><small>Oyun PIN’i:</small><b className="live-pin">{spaced(view.pin)}</b></div>{qr&&<img src={qr} alt="Oyuna katılma kare kodu" width={220} height={220}/>}</div>
 <div className="live-lobby-bar"><span>👥 <b>{view.count}</b> oyuncu</span><button className="live-ghost" disabled={busy} onClick={()=>void lead('lock',{locked:!view.locked})}>{view.locked?'🔒 Kilitli: aç':'🔓 Girişi kilitle'}</button>{next('Başlat ↗')}</div>
 <h2 className="live-title">{view.count?'Oyuncular hazır!':'Oyuncular bekleniyor…'}</h2>
-<ul className="live-names">{view.players?.map(p=><li key={p.name}><button title="Oyundan çıkar" onClick={()=>void lead('kick',{name:p.name})}><span aria-hidden="true">{p.avatar}</span> {p.name}</button></li>)}</ul>
+<ul className="live-names">{view.players?.map(p=>{const tm=view.teams?.find(t=>t.id===p.team);return <li key={p.name}><button title="Oyundan çıkar" onClick={()=>void lead('kick',{name:p.name})}>{tm&&<i className="team-dot" style={{background:tm.color}}/>}<span aria-hidden="true">{p.avatar}</span> {p.name}</button></li>;})}</ul>
 {!!view.count&&<p className="live-wait">Uygunsuz bir adı çıkarmak için üstüne dokun.</p>}</>);
 return stage(<>{question}{phase==='question'&&intro?introBox:<>{timer}{bars}{tiles}{phase==='question'&&!optionsQ&&<p className="live-typing">⌨ Oyuncular cevabını yazıyor…</p>}{answer}</>}
 {next(phase==='question'?intro?'Geç ⏭':'Süreyi bitir, cevabı göster':last?'Podyuma geç 🏆':'Skor tablosu →')}</>);}
 if(!me)return stage(null);
-if(phase==='lobby')return stage(<><h2 className="live-title">İçeridesin!</h2><p className="live-me"><span aria-hidden="true">{me.avatar}</span> {me.name}</p><p className="live-wait">Adını tahtada görüyor musun? Öğretmen oyunu başlatınca soru burada açılır.</p></>);
-if(phase==='question')return stage(<>{question}{intro?introBox:<>{timer}{me.answered?<>{tiles}{t==='type'&&<p className="live-sub">Cevabın: <b>{me.typed}</b></p>}<p className="live-wait">Cevabın alındı. Herkes cevaplayınca ya da süre bitince sonuç açılır.</p></>
+if(phase==='lobby')return stage(<><h2 className="live-title">İçeridesin!</h2><p className="live-me"><span aria-hidden="true">{me.avatar}</span> {me.name}</p>{view.teamMode&&<p className="team-chip">{view.teams?.find(t=>t.id===me.team)?.name}</p>}<p className="live-wait">Adını tahtada görüyor musun? Öğretmen oyunu başlatınca soru burada açılır.</p></>);
+if(phase==='question')return stage(<>{question}{intro?introBox:<>{timer}{me.answered?<>{tiles}{TEXT_TYPES.includes(t)&&<p className="live-sub">Cevabın: <b>{me.typed}</b></p>}{(t==='slider'||t==='scale')&&<p className="live-sub">Cevabın: <b>{me.value} {q?.unit}</b></p>}<p className="live-wait">Cevabın alındı. Herkes cevaplayınca ya da süre bitince sonuç açılır.</p></>
 :<Answer key={view.at} q={q!} busy={busy} left={left} send={choice=>void act({action:'answer',token,choice})}/>}</>}</>);
-const poll=t==='poll';
-return stage(<><div className={`live-verdict ${poll?'poll':me.ok?'ok':'no'}`} role="status"><b>{poll?me.answered?'✓ Cevabın kaydedildi':'⏱ Süre doldu':me.ok?'✓ Doğru!':!me.answered?'⏱ Süre doldu':'✗ Yanlış'}</b>
-{poll?<span>Anket sorusu: puan yok</span>:me.ok?<span>{me.points?`+${me.points} puan`:'Puansız soru'}</span>:<span>{q?.points?'Seri sıfırlandı':'Puansız soru'}</span>}{me.ok&&me.streak>=2&&<em><i aria-hidden="true">🔥</i> {me.streak} doğru üst üste!</em>}</div>
+const opinion=isOpinion(t)||t==='open';
+return stage(<><div className={`live-verdict ${opinion?'poll':me.ok?'ok':'no'}`} role="status"><b>{opinion?me.answered?'✓ Cevabın kaydedildi':'⏱ Süre doldu':me.ok?'✓ Doğru!':!me.answered?'⏱ Süre doldu':'✗ Yanlış'}</b>
+{opinion?<span>{t==='open'?'Öğretmen yanıtını rapordan değerlendirecek.':'Görüş sorusu: puan yok'}</span>:me.ok?<span>{me.points?`+${me.points} puan`:'Puansız soru'}</span>:<span>{q?.points?'Seri sıfırlandı':'Puansız soru'}</span>}{me.ok&&me.streak>=2&&<em><i aria-hidden="true">🔥</i> {me.streak} doğru üst üste!</em>}</div>
 {question}{bars}{tiles}{answer}<p className="live-sub">{me.rank}. sıradasın · {me.score} puan</p>{me.behind&&<p className="live-wait">{me.behind.gap?`${me.behind.name} seni ${me.behind.gap} puanla geçiyor`:`${me.behind.name} ile eşitsin`}</p>}
-<p className="live-wait">Öğretmen ilerletince devam edeceksin.</p></>,poll?'':me.ok?'ok':'no');}
+<p className="live-wait">Öğretmen ilerletince devam edeceksin.</p></>,opinion?'':me.ok?'ok':'no');}

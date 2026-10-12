@@ -3,7 +3,7 @@ import {useEffect,useState} from 'react';
 import {api,base} from './client';
 // Öğretmen sayfalarının ortak kabuğu: üst çubuk ve (KAHOOT_PASSWORD tanımlıysa) şifre girişi.
 export function TopBar({children}:{children?:React.ReactNode}){return <header className="topbar"><a className="brand" href={`${base}/kahootlar`}><i aria-hidden="true">▲◆●■</i> GençTek <b>Kahoot!</b></a>
-<nav>{children}<a href={`${base}/`} className="ghost">Oyuna katıl</a></nav></header>;}
+<nav>{children}<a href={`${base}/raporlar`} className="ghost">Raporlar</a><a href={`${base}/`} className="ghost">Oyuna katıl</a></nav></header>;}
 export function Gate({children}:{children:React.ReactNode}){const [state,setState]=useState<'wait'|'in'|'out'>('wait'),[password,setPassword]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false);
 useEffect(()=>{api<{teacher:boolean}>('/api/login').then(d=>setState(d.teacher?'in':'out')).catch(()=>setState('out'));},[]);
 async function login(){setBusy(true);setError('');try{await api('/api/login',{password});setState('in');}catch(e){setError(e instanceof Error?e.message:'Giriş yapılamadı.');}finally{setBusy(false);}}

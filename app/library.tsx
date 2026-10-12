@@ -29,6 +29,7 @@ return <><TopBar><a className="primary" href={`${base}/duzenle`}>+ Oluştur</a><
 <div className="body"><h2>{i.title||'Adsız kahoot'}</h2>{i.description&&<p>{i.description}</p>}<small className="muted">Son değişiklik: {date(i.updatedAt)}</small>
 {i.playable<i.count&&<small className="warn">⚠ {i.count-i.playable} soruda eksik var; oyunda atlanır.</small>}</div>
 <div className="actions"><a className={`primary${i.playable?'':' disabled'}`} aria-disabled={!i.playable} href={i.playable?`${base}/sun?id=${i.id}`:undefined}>▶ Başlat</a>
+<a className={`ghost${i.playable?'':' disabled'}`} aria-disabled={!i.playable} href={i.playable?`${base}/odev-ver?id=${i.id}`:undefined}>⌛ Ödev ver</a>
 <a className="ghost" href={`${base}/duzenle?id=${i.id}`}>✎ Düzenle</a>
 <button className="ghost" disabled={busy} onClick={()=>void run(()=>api('/api/quizzes',{action:'copy',id:i.id}))}>⧉ Kopyala</button>
 <button className="ghost" disabled={busy} onClick={()=>void download(i.id).catch(e=>setError(e.message))}>⬇ İndir</button>

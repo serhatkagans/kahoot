@@ -8,9 +8,9 @@ import {TYPES,playable,type Quiz} from '../lib/quiz';
 // Oyunu sun: öğretmen kütüphaneden seçtiği kahootun ayarlarını yapar ve canlı oyunu açar.
 // Açılan oyunun PIN'i adrese (?pin=482913) yazılır, yönetim anahtarı bu tarayıcıda tutulur: sayfa yenilense de oyun kaldığı yerden sürer.
 function Setup({id,onOpen}:{id:string;onOpen:(pin:string)=>void}){const [quiz,setQuiz]=useState<Quiz|null>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false);
-const [label,setLabel]=useState(''),[shuffleQ,setShuffleQ]=useState(false),[shuffleA,setShuffleA]=useState(true);
+const [label,setLabel]=useState(''),[shuffleQ,setShuffleQ]=useState(false),[shuffleA,setShuffleA]=useState(true),[teamMode,setTeamMode]=useState(false),[teamChoice,setTeamChoice]=useState(true);
 useEffect(()=>{if(id)api<Quiz>(`/api/quizzes?id=${id}`).then(setQuiz).catch(e=>setError(e.message));},[id]);
-async function open(){setBusy(true);setError('');try{const d=await api<{pin:string;host:string}>('/api/live',{action:'create',quiz:id,label,shuffleQ,shuffleA});rememberHost(d.pin,d.host);onOpen(d.pin);}
+async function open(){setBusy(true);setError('');try{const d=await api<{pin:string;host:string}>('/api/live',{action:'create',quiz:id,label,shuffleQ,shuffleA,teamMode,teamChoice});rememberHost(d.pin,d.host);onOpen(d.pin);}
 catch(e){setError(e instanceof Error?e.message:'Oyun açılamadı.');}finally{setBusy(false);}}
 const ready=quiz?playable(quiz):[],skipped=quiz?quiz.questions.length-ready.length:0,minutes=Math.ceil(ready.reduce((s,q)=>s+q.time+12,0)/60);
 if(!id)return <><TopBar/><main className="page narrow"><p className="error">Önce kütüphaneden bir kahoot seç.</p><a className="primary" href={`${base}/kahootlar`}>Kahootlarım</a></main></>;
@@ -20,6 +20,7 @@ return <><TopBar/><main className="page narrow">{error&&<p className="error" rol
 <form onSubmit={e=>{e.preventDefault();void open();}}><label>Oyunun adı (tahtada görünür)<input maxLength={40} placeholder={quiz.title.slice(0,40)||'ör. 9-B'} value={label} onChange={e=>setLabel(e.target.value)}/></label>
 <fieldset><legend>Oyun seçenekleri</legend><label className="check"><input type="checkbox" checked={shuffleQ} onChange={e=>setShuffleQ(e.target.checked)}/> Soruların sırasını karıştır</label>
 <label className="check"><input type="checkbox" checked={shuffleA} onChange={e=>setShuffleA(e.target.checked)}/> Şıkların sırasını karıştır <small className="muted">(Doğru/Yanlış hariç)</small></label></fieldset>
+<fieldset><legend>Takım modu</legend><label className="check"><input type="checkbox" checked={teamMode} onChange={e=>setTeamMode(e.target.checked)}/> Oyuncuları takımlara ayır</label>{teamMode&&<label className="check"><input type="checkbox" checked={teamChoice} onChange={e=>setTeamChoice(e.target.checked)}/> Oyuncular takımını kendisi seçsin <small className="muted">(kapalıysa dengeli dağıtılır)</small></label>}</fieldset>
 <button className="primary big" disabled={busy||!ready.length}>{ready.length?'Oyunu aç ↗':'Oynanabilir soru yok'}</button></form>
 <details><summary>Sorular ({ready.length})</summary><ol className="host-list">{ready.map(q=><li key={q.id}><span>{TYPES[q.type].icon} {TYPES[q.type].label} · {q.time} sn</span>{q.text}</li>)}</ol></details>
 <a className="text-link" href={`${base}/duzenle?id=${quiz.id}`}>✎ Düzenle</a></div>}</main></>;}

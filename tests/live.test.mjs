@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {advanceLive,answerLive,createLive,endLive,findLive,joinLive,kickLive,lockLive,reportLive,viewLive} from '../lib/live.ts';
+import {advanceLive,answerLive,createLive,endLive,findLive,joinLive,kickLive,lockLive,reportLive,viewLive,voteLive} from '../lib/live.ts';
 const Q=(o)=>({type:'quiz',prompt:'soru',image:null,options:['a','b','c','d'],correct:[0],accept:[],multi:false,time:20,points:1,answer:'a',...o});
 const qs=[0,1,2].map(i=>Q({prompt:`soru ${i}`,correct:[i],answer:'abcd'[i]}));
 const A='a'.repeat(32),B='b'.repeat(32),C='c'.repeat(32);
@@ -57,4 +57,30 @@ test('Soru türleri: çoklu seçim, Doğru/Yanlış, cevabı yaz, sıralama ve a
 test('Lobi kilidi ve oyunu erken bitirme',()=>{
  const g=createLive({pin:pin(),host:'h',label:'',qs},0);joinLive(g,'Elif',A);lockLive(g,true);assert.equal(joinLive(g,'Can',B),'locked');assert.equal(joinLive(g,'Elif',A),'ok','içerideki geri dönebilir');
  lockLive(g,false);assert.equal(joinLive(g,'Can',B),'ok');advanceLive(g,0);assert.ok(endLive(g,1000));assert.equal(g.phase,'end');assert.ok(!endLive(g,1000));assert.equal(viewLive(g,null,true,1000).board.length,2);
+});
+test('Yeni etkileşimli türler ve beyin fırtınası oylaması',()=>{
+ const g=createLive({pin:pin(),host:'h',label:'',intro:0,qs:[
+  Q({type:'slider',options:[],correct:[],min:0,max:10,step:1,value:5,tolerance:1,unit:'kg',answer:'5 kg'}),
+  Q({type:'pin',options:[],correct:[],pinX:50,pinY:50,pinRadius:10,answer:'İşaretli alan'}),
+  Q({type:'brainstorm',options:[],correct:[],points:0})]},0);
+ joinLive(g,'Elif',A);joinLive(g,'Can',B);advanceLive(g,0);answerLive(g,A,6,0);answerLive(g,B,8,0);assert.equal(viewLive(g,A,false,0).me.ok,true);assert.equal(viewLive(g,B,false,0).me.ok,false);
+ advanceLive(g,0);advanceLive(g,0);answerLive(g,A,{x:52,y:51},0);answerLive(g,B,{x:90,y:90},0);assert.equal(viewLive(g,A,false,0).me.ok,true);
+ advanceLive(g,0);advanceLive(g,0);answerLive(g,A,'Robot kulübü',0);answerLive(g,B,'Kodlama günü',0);assert.ok(voteLive(g,A,B));assert.equal(viewLive(g,A,false,0).result.ideas.find(x=>x.id===B).votes,1);
+});
+test('Takım modu: seçim, otomatik dengeleme ve takım skoru',()=>{
+ const g=createLive({pin:pin(),host:'h',label:'Takımlar',intro:0,qs:[Q()],teamMode:true,teamChoice:false},0);joinLive(g,'Elif',A);joinLive(g,'Can',B);joinLive(g,'Ece',C);
+ const lobby=viewLive(g,null,true,0);assert.equal(lobby.teamMode,true);assert.ok(Math.max(...lobby.teams.map(t=>t.count))<=1);
+ advanceLive(g,0);answerLive(g,A,0,0);answerLive(g,B,1,0);answerLive(g,C,0,0);advanceLive(g,0);const board=viewLive(g,null,true,0);assert.equal(board.teamBoard.reduce((s,t)=>s+t.score,0),2000);
+});
+
+test('Canlı oyun arşivi: yeniden arşivleme öğretmen değerlendirmesini silmez',async()=>{
+ const fs=await import('node:fs'),os=await import('node:os'),path=await import('node:path');
+ process.env.DATA_DIR=fs.mkdtempSync(path.join(os.tmpdir(),'kahoot-'));
+ const {archiveLive,gradeLiveReport}=await import('../lib/reports.ts');
+ const {createLive:make,joinLive:enter,advanceLive:next,answerLive:reply,endLive:finish}=await import('../lib/live.ts');
+ const open={type:'open',prompt:'Neden?',image:null,options:[],correct:[],accept:[],multi:false,time:20,points:1,answer:'',min:0,max:0,step:1,value:0,tolerance:0,unit:'',lowLabel:'',highLabel:'',pinX:50,pinY:50,pinRadius:12};
+ const t='c'.repeat(32),g=make({pin:'731000',host:'h',label:'Arşiv',qs:[open],intro:0},0);enter(g,'Ada',t,undefined,undefined,0);next(g,0);assert.ok(reply(g,t,'Çünkü',100));finish(g,200);
+ const r=archiveLive(g);assert.ok(gradeLiveReport(r,t,0,true));
+ const again=archiveLive(g);assert.equal(again.players[0].answers[0].ok,true);assert.equal(again.players[0].score,1000);
+ fs.rmSync(process.env.DATA_DIR,{recursive:true,force:true});
 });

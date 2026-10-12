@@ -27,3 +27,11 @@ test('Toplu yapıştırma: Excel satırları ve metin blokları',()=>{
  assert.deepEqual(ts.map(q=>q.type),['quiz','tf','quiz','type']);assert.equal(ts[0].text,"MVP'nin amacı?");assert.ok(ts[1].options[1].ok);assert.ok(ts[2].options[0].ok);assert.deepEqual(ts[3].accept,['CPU','MİB']);
  assert.ok(ts.every(q=>!problems(q).length));
 });
+test('Yeni soru türleri: temizleme, doğrulama ve canlı soru ayarları',()=>{
+ const quiz=cleanQuiz({questions:[
+  {type:'wordcloud',text:'Tek kelime?'},{type:'open',text:'Açıkla'},{type:'slider',text:'Kaç?',min:0,max:10,value:7,tolerance:1,unit:'kg'},
+  {type:'pin',text:'Nerede?',image:'aaaaaaaaaaaaaaaa.png',pinX:25,pinY:75,pinRadius:10},{type:'scale',text:'Puanla',min:1,max:5},{type:'brainstorm',text:'Fikrin?'}]});
+ assert.equal(playable(quiz).length,6);assert.deepEqual(quiz.questions.map(q=>q.type),['wordcloud','open','slider','pin','scale','brainstorm']);
+ const live=liveQuestions(quiz);assert.equal(live[2].value,7);assert.equal(live[2].answer,'7 kg');assert.equal(live[3].pinX,25);assert.equal(live[4].points,0);assert.equal(live[5].options.length,0);
+ const bad=blank('pin');bad.text='Nerede?';assert.deepEqual(problems(bad),['İşaretlenecek görseli ekle.']);
+});
